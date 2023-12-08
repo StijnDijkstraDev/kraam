@@ -1,3 +1,2 @@
 .vscode/settings.json
-__pycache__/game.cpython-311.pyc
-__pycache__/sdsi.cpython-311.pyc
+__pycache__/*
