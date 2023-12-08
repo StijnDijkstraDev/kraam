@@ -5,11 +5,11 @@ from sdsi import SDSI
 import sys
 import cProfile
 
-def parse_process_export(srcfile: str, destfile: str, startvertex : VertId, algo, multithreaded: bool):
+def parse_process_export(srcfile: str, destfile: str, startvertex : VertId, algo_to_use, multithreaded: bool):
     game = parse_game(sys.argv[1])
     print(game)
 
-    algo : SDSI = SDSI(game, VertId(0))
+    algo : algo_to_use = algo_to_use(game, VertId(0))
     
     subgameconf = algo.prune()
     found : bool = len(subgameconf) > 0
