@@ -2,7 +2,7 @@ from game import Game, VertId, Priority
 from game import is_valid_subgame, find_problems, find_problems_on_specified_verts
 
 
-class SDSI:
+class SDSI_reverse:
     def __init__(self, game: Game, start: VertId):
         self.game : Game = game
         self.start : VertId = start
@@ -15,7 +15,7 @@ class SDSI:
         for i in range(times):
             nextReach: set[VertId] = set()
             for v in self.reach:
-                nextReach = nextReach | pOutEdges[v]
+                nextReach = nextReach | pIncEdges[v]
             
             if len(nextReach - self.reach) != 0:
                 increased = True
