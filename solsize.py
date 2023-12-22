@@ -8,8 +8,10 @@ parser = argparse.ArgumentParser(
 
 parser.add_argument('gamefile')
 parser.add_argument('solfile')
-
 args = parser.parse_args()
+
+filename: str = args.gamefile.split("/")[-1]
+
 
 gamefile = open(args.gamefile, "r")
 parity = int(gamefile.readline().strip("\n\r; ").split()[1])
@@ -17,4 +19,4 @@ parity = int(gamefile.readline().strip("\n\r; ").split()[1])
 game: Game = parse_game(args.gamefile)
 solution: dict[VertId, VertId] = parse_solution(args.solfile)
 
-print(str(parity) + ", " + str(solution_size(game, solution)))
+print(filename + ": " + str(parity) + ", " + str(solution_size(game, solution)))

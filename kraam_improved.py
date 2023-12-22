@@ -1,5 +1,6 @@
+import itertools
 from threading import Thread
-from game import Game, VertId, Priority, export_to_file, find_problems_on_specified_verts, flatten_game, realise_subgame
+from game import Game, VertId, Priority, export_to_file, find_problems_on_specified_verts, flatten_game, parse_solution, realise_subgame, solution_domain, solution_size
 from game import parse_game, find_problems
 from sdsi import SDSI
 from sdsi_bidirectional import SDSI_bidirectional
@@ -8,14 +9,16 @@ import cProfile
 import argparse
 import os
 import shutil
+import math
 
-
+CMD_NO_OUT_STR: str = " >/dev/null 2>&1"
 
 def parse_findsolution_export(algo_to_use):
     # temporary directory unique to this process
     pid = os.getpid()
-    temp_path = "./kraam_temp_" + str(pid)
-    os.mkdir(temp_path)
+    temp_dir = "./kraam_temp_" + str(pid)
+    os.mkdir(temp_dir)
+    temp_path = temp_dir + "/temp"
     
     winning_subgames: set[frozenset[VertId]] = set()
     subgame_stack: list[set[VertId]] = list()
@@ -25,62 +28,72 @@ def parse_findsolution_export(algo_to_use):
     (vertices, init, priority, owned, outEdges, incEdges) = game
     subgame_stack.append(set(vertices))
     
-    # find all subgames configurations that have a winning strategy
-    while subgame_stack:
-        subgameconf = subgame_stack.pop() # get non-frozen copy of set
-        print("subgame collection: " + str(len(winning_subgames)))
-        print("stacksize: " + str(len(subgame_stack)))
-        for v in subgameconf:
-            if v == VertId(0):
-                continue
-            newsubgameconf: set[VertId] = prune(game, subgameconf - {v})
-            if not newsubgameconf:
-                # no subgame found
-                continue
-            
-            exists = False
-            for s in winning_subgames:
-                if s == frozenset(newsubgameconf):
-                    exists = True
-                    break
-            if exists: continue
-            
-            if frozenset(newsubgameconf) in winning_subgames:
-                # allready in set
-                continue
-            if not check_solvable(game, newsubgameconf, temp_path + "/temp"):
-                # not solvable
+    # solve, the size of the solution will be used as the max size of any future subgames
+    totalsize: int = len(vertices)
+    best_subgame: set[VertId] = get_solution_domain(game, vertices, temp_path)
+    best_solsize: int = len(best_subgame)
+    found_smallest = False
+    
+    
+    while True:
+        subgames_checked: set[frozenset[VertId]] = set()
+        improvement = False
+        # init vertex is removed and then added back so that each subgraph contains the init vertex
+        # subtract 2 from minsize. One because the init vertex will be added,
+        # the other because we are only looking for _smaller_ subgraphs
+        print("best_solsize: " + str(best_solsize))
+        num_options = math.factorial(totalsize) / (math.factorial(best_solsize) * math.factorial(totalsize - best_solsize))
+        print("that means " + str(num_options) + " options")
+        for sg in set(itertools.combinations(vertices - {VertId(0)}, best_solsize - 2)):
+            subgraph: set[VertId] = set(sg)
+            subgraph.add(VertId(0))
+            subgame = prune(game, subgraph)
+            if len(subgame) < 2:
                 continue
             
-            winning_subgames.add(frozenset(newsubgameconf))
-            subgame_stack.append(newsubgameconf)
+            if frozenset(subgame) in subgames_checked:
+                continue
+            
+            subgames_checked.add(frozenset(subgame))
+            
+            if not check_solvable(game, subgame, temp_path):
+                continue
+            
+            best_subgame = get_solution_domain(game, subgame, temp_path + ".sol")
+            best_solsize = len(best_subgame)
+            improvement = True
+            break
+        
+        # exit condition: no improvement in last run
+        if not improvement:
+            break
+            
+    print("solution size: " + str(best_solsize))
+    print("solution: " + str(best_subgame))
+    export_subgame_config(game, best_subgame, args.outputfolder)
 
-    # debug print all subgames
-    print("subgames found:")
-    for s in winning_subgames:
-        print(s)
-        print("")
-        
-    # get smallest
-    smallest: frozenset[VertId] = list(winning_subgames)[0]
-    for s in winning_subgames:
-        if len(s) < len(smallest):
-            smallest = s
-    
-    print(smallest)
-    export_subgame_config(game, set(smallest), args.outputfolder)
-        
-    shutil.rmtree(temp_path)
+    shutil.rmtree(temp_dir)
     
         
     
-def check_solvable(game: Game, subgameconf: set[VertId], temppath: str) -> bool:
-    export_subgame_config(game, subgameconf, temppath)
-    os.system("oink " + temppath + " " + temppath + ".sol >/dev/null 2>&1")
-    solfile = open(temppath + ".sol", "r")
+def check_solvable(game: Game, subgameconf: set[VertId], temp_path: str) -> bool:
+    export_subgame_config(game, subgameconf, temp_path)
+    os.system("oink " + temp_path + " " + temp_path + ".sol" + CMD_NO_OUT_STR)
+    solfile = open(temp_path + ".sol", "r")
     solfile.readline() # skip first line
     # tempfile does not need to be deleted, will be overwritten and deleted at the end
     return solfile.readline().strip("\n\r;").split()[1] == "0"
+
+def get_solution_size(game: Game, subgameconf: set[VertId], temp_path: str) -> int:
+    export_subgame_config(game, subgameconf, temp_path)
+    os.system("oink " + temp_path + " " + temp_path + ".sol" + CMD_NO_OUT_STR)
+    return solution_size(game, parse_solution(temp_path + ".sol"))
+
+def get_solution_domain(game: Game, subgameconf: set[VertId], temp_path: str) -> set[VertId]:
+    export_subgame_config(game, subgameconf, temp_path)
+    os.system("oink " + temp_path + " " + temp_path + ".sol" + CMD_NO_OUT_STR)
+    return solution_domain(game, parse_solution(temp_path + ".sol"))
+    
     
 def prune(game: Game, potentialconf: set[VertId]) -> set[VertId]:
     (_, init, _, _, _, incEdges) = game

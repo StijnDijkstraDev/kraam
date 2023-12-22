@@ -171,7 +171,7 @@ def export_to_file(game: Game, filename: str) -> None:
         ownedStr = "0" if (v in owned) else "1"
         edgesStr = ",".join(map(str, outEdges[v]))
         initString: str = (" \"initial\"" if v == init else "")
-        file.write(str(v) + " " + priorityStr + " " + ownedStr + " " + edgesStr + initString + ";\n")
+        file.write(str(v) + " " + priorityStr + " " + ownedStr + " " + edgesStr + ";\n")
     
 def parse_solution(filename: str) -> dict[VertId, VertId]:
     file = open(filename, 'r')
@@ -185,6 +185,9 @@ def parse_solution(filename: str) -> dict[VertId, VertId]:
     return solution
 
 def solution_size(game: Game, solution: dict[VertId, VertId]) -> int:
+    return len(solution_domain(game, solution))
+
+def solution_domain(game: Game, solution: dict[VertId, VertId]) -> set[VertId]:
     (vertices, init, priority, owned, outEdges, incEdges) = game
     dominion: set[VertId] = {init}
     prevdominion = set()
@@ -197,4 +200,4 @@ def solution_size(game: Game, solution: dict[VertId, VertId]) -> int:
             else:
                 dominion |= outEdges[v]
     
-    return len(dominion)
+    return dominion
