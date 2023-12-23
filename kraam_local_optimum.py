@@ -12,8 +12,9 @@ import shutil
 import math
 
 CMD_NO_OUT_STR: str = " >/dev/null 2>&1"
+TOPSIZE = 10
 
-def parse_findsolution_export(algo_to_use):
+def parse_findsolution_export():
     # temporary directory unique to this process
     pid = os.getpid()
     temp_dir = "./kraam_temp_" + str(pid)
@@ -26,51 +27,55 @@ def parse_findsolution_export(algo_to_use):
     
     # solve, the size of the solution will be used as the max size of any future subgames
     totalsize: int = len(vertices)
-    best_subgame: set[VertId] = get_solution_domain(game, vertices, temp_path)
-    best_solsize: int = len(best_subgame)
     
+    subgames_evaluated: set[frozenset[VertId]] = set()
     
-    subgames_checked: set[frozenset[VertId]] = set()
+    subgame_perf: dict[frozenset[VertId], int] = dict()
+    # set full game as initial subgame
+    subgame_perf[frozenset(vertices)] = get_solution_size(game, vertices, temp_path)
     
-    # init vertex is removed and then added back so that each subgraph contains the init vertex
-    # subtract 2 from minsize. One because the init vertex will be added,
-    # the other because we are only looking for _smaller_ subgraphs
-    print("best_solsize: " + str(best_solsize))
-    num_options = math.factorial(totalsize) / (math.factorial(best_solsize) * math.factorial(totalsize - best_solsize))
-    print("that means " + str(num_options) + " options")
-    for i in range(2, best_solsize):
-        print("now looking into subgraphs with " + str(i) + " vertices")
-        found = False
-        for sg in set(itertools.combinations(vertices - {VertId(0)}, i - 1)):
-            subgraph: set[VertId] = set(sg)
-            subgraph.add(VertId(0))
-            subgame = prune(game, subgraph)
-            if len(subgame) < 2:
-                continue
-            
-            if frozenset(subgame) in subgames_checked:
-                continue
-            
-            subgames_checked.add(frozenset(subgame))
-            
-            if not check_solvable(game, subgame, temp_path):
-                continue
-            
-            best_subgame = get_solution_domain(game, subgame, temp_path + ".sol")
-            best_solsize = len(best_subgame)
-            found = True
-            break
+    while True:
+        last_best = min(subgame_perf.values())
         
-        if found:
+        not_evaluated = (subgame_perf.keys() - subgames_evaluated)
+        to_check = get_perf_order({k:v for k,v in subgame_perf.items() if k in not_evaluated})
+        subgames_evaluated |= not_evaluated
+        for i in range(min(TOPSIZE, len(to_check))):
+            sg = to_check[i]
+
+            for v in sg:
+                if v == VertId(0):
+                    continue
+                newsg: frozenset[VertId] = frozenset(prune(game, set(sg-{v})))
+                if len(newsg) < 2:
+                    continue
+                
+                if newsg in subgame_perf.keys():
+                    continue
+                
+                if not check_solvable(game, set(newsg), temp_path):
+                    continue
+                
+                subgame_perf[frozenset(newsg)] = get_solution_size(game, set(newsg), temp_path)
+                
+        
+        if not last_best > min(subgame_perf.values()):
             break
             
-    print("solution size: " + str(best_solsize))
-    print("solution: " + str(best_subgame))
-    export_subgame_config(game, best_subgame, args.outputfolder)
+    
+    best_perf = min(subgame_perf.values())
+    best_subgames = [k for k in subgame_perf if subgame_perf[k] == best_perf]
+    smallest_subgame = get_solution_domain(game, set(best_subgames[0]), temp_path)
+    print("solsize: " + str(len(smallest_subgame)))
+    print("smallest subgame: " + str(smallest_subgame))
+    export_subgame_config(game, smallest_subgame, args.outputfolder)
 
     shutil.rmtree(temp_dir)
     
-        
+
+
+def get_perf_order(perf_order: dict[frozenset[VertId], int]) -> list[frozenset[VertId]]:
+    return [k for k, _ in sorted(perf_order.items(), key=lambda item:item[1])]
     
 def check_solvable(game: Game, subgameconf: set[VertId], temp_path: str) -> bool:
     export_subgame_config(game, subgameconf, temp_path)
@@ -120,16 +125,7 @@ def export_subgame_config(game: Game, subgameconf: set[VertId], destfile: str):
 
 
 def main_func():
-    match args.algorithm:
-        case 'SDSI':
-            parse_findsolution_export(SDSI)
-        case 'SDSI-BI':
-            parse_findsolution_export(SDSI_bidirectional)
-        case 'SDSI-REV':
-            parse_findsolution_export(SDSI_reverse)
-        case _:
-            print("Algorithm not recognized!")
-            print("Available: 'SDSI', 'SDSI-BI', 'SDSI-REV")
+    parse_findsolution_export()
 
 
 parser = argparse.ArgumentParser(
