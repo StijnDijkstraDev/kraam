@@ -65,14 +65,72 @@ def parse_findsolution_export():
     
     best_perf = min(subgame_perf.values())
     best_subgames = [k for k in subgame_perf if subgame_perf[k] == best_perf]
+    #smallest_subgame = get_solution_domain(game, set(best_subgames[0]), temp_path)
+    smallest_subgame = best_subgames[0]
+    print("solsize: " + str(len(smallest_subgame)))
+    print("smallest subgame: " + str(smallest_subgame))
+    export_subgame_config(game, set(smallest_subgame), args.outputfolder)
+
+    shutil.rmtree(temp_dir)
+    
+def parse_findsolution_export_sol_domain_accelerated():
+    # temporary directory unique to this process
+    pid = os.getpid()
+    temp_dir = "./kraam_temp_" + str(pid)
+    os.mkdir(temp_dir)
+    temp_path = temp_dir + "/temp"
+        
+    game: Game = parse_game(args.inputfile)
+    
+    (vertices, init, priority, owned, outEdges, incEdges) = game
+    
+    # solve, the size of the solution will be used as the max size of any future subgames
+    totalsize: int = len(vertices)
+    
+    subgames_evaluated: set[frozenset[VertId]] = set()
+    
+    subgame_perf: dict[frozenset[VertId], int] = dict()
+    # set full game as initial subgame
+    subgame_perf[frozenset(vertices)] = get_solution_size(game, vertices, temp_path)
+    
+    while True:
+        last_best = min(subgame_perf.values())
+        
+        not_evaluated = (subgame_perf.keys() - subgames_evaluated)
+        to_check = get_perf_order({k:v for k,v in subgame_perf.items() if k in not_evaluated})
+        subgames_evaluated |= not_evaluated
+        for i in range(min(TOPSIZE, len(to_check))):
+            sg = to_check[i]
+
+            for v in sg:
+                if v == VertId(0):
+                    continue
+                newsg: frozenset[VertId] = frozenset(prune(game, set(sg-{v})))
+                if len(newsg) < 2:
+                    continue
+                
+                if newsg in subgame_perf.keys():
+                    continue
+                
+                if not check_solvable(game, set(newsg), temp_path):
+                    continue
+                
+                newsoldomain = get_solution_domain(game, set(newsg), temp_path)
+                subgame_perf[frozenset(newsoldomain)] = get_solution_size(game, set(newsg), temp_path)
+                
+        
+        if not last_best > min(subgame_perf.values()):
+            break
+            
+    
+    best_perf = min(subgame_perf.values())
+    best_subgames = [k for k in subgame_perf if subgame_perf[k] == best_perf]
     smallest_subgame = get_solution_domain(game, set(best_subgames[0]), temp_path)
     print("solsize: " + str(len(smallest_subgame)))
     print("smallest subgame: " + str(smallest_subgame))
     export_subgame_config(game, smallest_subgame, args.outputfolder)
 
     shutil.rmtree(temp_dir)
-    
-
 
 def get_perf_order(perf_order: dict[frozenset[VertId], int]) -> list[frozenset[VertId]]:
     return [k for k, _ in sorted(perf_order.items(), key=lambda item:item[1])]
@@ -117,15 +175,25 @@ def prune(game: Game, potentialconf: set[VertId]) -> set[VertId]:
     return pruneResult
 
 def export_subgame_config(game: Game, subgameconf: set[VertId], destfile: str):
+    #print("subgameconf: " + str(subgameconf) + "\n\n")
     subgame = realise_subgame(game, subgameconf)
     #print("subgame:\n" + str(subgame) + "\n\n")
     subgame = flatten_game(subgame)
     #print("flattened subgame:\n" + str(subgame) + "\n\n")
+    
+    #(vertices, init, priority, owned, outEdges, incEdges) = game
+    #print("parent outEdges:")
+    #for v in outEdges.keys():
+        #print(str(v) + ": " + str(outEdges[v]))
     export_to_file(subgame, destfile)
 
 
 def main_func():
-    parse_findsolution_export()
+    if args.soldomacc:
+        parse_findsolution_export_sol_domain_accelerated()
+    else:
+        parse_findsolution_export()
+        
 
 
 parser = argparse.ArgumentParser(
@@ -139,6 +207,7 @@ parser.add_argument('-sv', '--initialvertex', default=0)
 parser.add_argument('-p', '--profile', action='store_true')
 parser.add_argument('-mt', '--multithreaded', action='store_true')
 parser.add_argument('-opf', '--optimizedproblemfinder', action='store_true')
+parser.add_argument('-sda', '--soldomacc', action='store_true')
 
 args = parser.parse_args()
 
